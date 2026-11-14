@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -108,6 +110,15 @@ const ensureDbConnected = async (req, res, next) => {
 // Mount API routes (support both /api/* and /* in case a proxy strips the /api prefix)
 app.use(['/api/inventory', '/inventory'], ensureDbConnected, inventoryRoutes);
 app.use(['/api/analytics', '/analytics'], ensureDbConnected, analyticsRoutes);
+
+// Serve built frontend static assets if ../dist exists (resilience fallback)
+const distPath = path.join(__dirname, '../dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get(/^(?!\/api).*/, (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 const PORT = process.env.PORT || 5000;
 
