@@ -1,12 +1,17 @@
 /**
  * FitFlow AI - Axios API Client & Endpoints
- * Connected to Express Backend on http://localhost:5000/api
+ *
+ * Local dev  : uses VITE_API_URL from .env  (e.g. http://localhost:5000/api)
+ * Vercel prod: uses relative /api path — Vercel rewrites /api/* → server service
  */
 
 import axios from 'axios';
 
+// In production on Vercel, VITE_API_URL is NOT set, so we fall back to '/api'
+// (same domain, routed to the Express service via vercel.json rewrites).
+// In local dev, set VITE_API_URL=http://localhost:5000/api in your .env file.
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: import.meta.env.VITE_API_URL || '/api',
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
