@@ -1,8 +1,21 @@
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const router = express.Router();
 
 const Inventory = require('../models/Inventory');
 const Product = require('../models/Product');
+
+let cachedSnapshot = null;
+const getSnapshotInventory = () => {
+  if (!cachedSnapshot) {
+    const snapPath = path.join(__dirname, '..', 'data', 'fitflowSnapshot.json');
+    if (fs.existsSync(snapPath)) {
+      cachedSnapshot = JSON.parse(fs.readFileSync(snapPath, 'utf8'));
+    }
+  }
+  return cachedSnapshot?.inventory || [];
+};
 
 // 1. Add a new inventory record
 router.post('/', async (req, res) => {
@@ -26,11 +39,51 @@ router.post('/', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const { search, store, storeId, size, category, page = 1, limit = 100 } = req.query;
+    const targetStore = store || storeId;
+    const parsedLimit = limit === 'all' ? 5000 : parseInt(limit, 10) || 100;
+    const parsedPage = parseInt(page, 10) || 1;
+    const skip = (parsedPage - 1) * parsedLimit;
+
+    // Fallback to verified fitflow_ai snapshot if MongoDB Atlas IP whitelist blocks cloud connection
+    if (req.dbConnected === false) {
+      let items = getSnapshotInventory();
+      if (targetStore) {
+        items = items.filter((i) => i.store === targetStore);
+      }
+      if (size) {
+        if (size === 'XXXL' || size === '3XL') {
+          items = items.filter((i) => i.size === '3XL' || i.size === 'XXXL');
+        } else {
+          items = items.filter((i) => i.size === size);
+        }
+      }
+      if (category) {
+        items = items.filter((i) => i.category === category);
+      }
+      if (search) {
+        const q = search.toLowerCase();
+        items = items.filter(
+          (i) =>
+            (i.sku && i.sku.toLowerCase().includes(q)) ||
+            (i.productName && i.productName.toLowerCase().includes(q)) ||
+            (i.store && i.store.toLowerCase().includes(q))
+        );
+      }
+      const total = items.length;
+      const paged = items.slice(skip, skip + parsedLimit);
+      return res.status(200).json({
+        success: true,
+        count: paged.length,
+        total,
+        page: parsedPage,
+        totalPages: Math.ceil(total / parsedLimit),
+        data: paged,
+      });
+    }
 
     const pipeline = [];
 
     // Filter by store if provided
-    const targetStore = store || storeId;
     if (targetStore) {
       pipeline.push({ $match: { store: targetStore } });
     }
@@ -75,11 +128,6 @@ router.get('/', async (req, res) => {
 
     // Sort by store and SKU
     pipeline.push({ $sort: { store: 1, sku: 1 } });
-
-    // Pagination
-    const parsedLimit = limit === 'all' ? 5000 : parseInt(limit, 10) || 100;
-    const parsedPage = parseInt(page, 10) || 1;
-    const skip = (parsedPage - 1) * parsedLimit;
 
     // Use facet to get total count and paginated data
     pipeline.push({

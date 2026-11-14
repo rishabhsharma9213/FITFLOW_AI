@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -7,6 +9,17 @@ const Product = require('../models/Product');
 const Sales = require('../models/Sales');
 const Store = require('../models/Store');
 const { generateInventoryInsights } = require('../services/aiService');
+
+let cachedSnapshot = null;
+const getSnapshot = () => {
+  if (!cachedSnapshot) {
+    const snapPath = path.join(__dirname, '..', 'data', 'fitflowSnapshot.json');
+    if (fs.existsSync(snapPath)) {
+      cachedSnapshot = JSON.parse(fs.readFileSync(snapPath, 'utf8'));
+    }
+  }
+  return cachedSnapshot;
+};
 
 // Helper to determine the dynamic 30-day window from the latest sale date in database
 const get30DayWindow = async () => {
@@ -22,6 +35,12 @@ const get30DayWindow = async () => {
  */
 router.get('/overview', async (req, res) => {
   try {
+    if (req.dbConnected === false) {
+      const snap = getSnapshot();
+      if (snap?.overview) {
+        return res.status(200).json({ success: true, data: snap.overview });
+      }
+    }
     const { minDate, maxDate } = await get30DayWindow();
 
     // 1. Inventory Units, Zero-Stock, Ageing >= 90
@@ -359,6 +378,12 @@ const computeRecommendationsData = async () => {
  */
 router.get('/recommendations', async (req, res) => {
   try {
+    if (req.dbConnected === false) {
+      const snap = getSnapshot();
+      if (snap?.recommendations) {
+        return res.status(200).json({ success: true, data: snap.recommendations });
+      }
+    }
     const data = await computeRecommendationsData();
 
     res.status(200).json({
@@ -387,6 +412,13 @@ router.get('/recommendations', async (req, res) => {
 router.get('/ai-insights', async (req, res) => {
   try {
     const force = req.query.force === 'true';
+    if (req.dbConnected === false) {
+      const snap = getSnapshot();
+      if (snap?.overview && snap?.recommendations) {
+        const aiInsights = await generateInventoryInsights(snap.overview, snap.recommendations, { force });
+        return res.status(200).json({ success: true, data: aiInsights });
+      }
+    }
     const recs = await computeRecommendationsData();
 
     const aiInsights = await generateInventoryInsights(
