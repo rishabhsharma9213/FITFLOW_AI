@@ -1,17 +1,41 @@
 /**
  * FitFlow AI - Axios API Client & Endpoints
  *
- * Local dev  : uses VITE_API_URL from .env  (e.g. http://localhost:5000/api)
- * Vercel prod: uses relative /api path — Vercel rewrites /api/* → server service
+ * Local dev  : uses http://localhost:5000/api (or VITE_API_URL from local .env)
+ * Vercel prod: uses relative '/api' path (routed to Express service via vercel.json)
+ *              or a remote production VITE_API_URL if explicitly configured.
+ *              Never allows 'localhost' or '127.0.0.1' when accessed from a production domain.
  */
 
 import axios from 'axios';
 
-// In production on Vercel, VITE_API_URL is NOT set, so we fall back to '/api'
-// (same domain, routed to the Express service via vercel.json rewrites).
-// In local dev, set VITE_API_URL=http://localhost:5000/api in your .env file.
+const isBrowserLocalhost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const resolveApiBaseUrl = () => {
+  const envUrl = (import.meta.env.VITE_API_URL || '').trim();
+
+  // Production / non-localhost browser: NEVER allow requests to go to localhost
+  if (!isBrowserLocalhost) {
+    if (
+      envUrl &&
+      !envUrl.includes('localhost') &&
+      !envUrl.includes('127.0.0.1')
+    ) {
+      return envUrl.replace(/\/+$/, '');
+    }
+    return '/api';
+  }
+
+  // Local development on localhost
+  return envUrl || 'http://localhost:5000/api';
+};
+
+export const API_BASE_URL = resolveApiBaseUrl();
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: API_BASE_URL,
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
@@ -21,6 +45,10 @@ const api = axios.create({
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    const serverMessage = error.response?.data?.message;
+    if (serverMessage) {
+      error.message = serverMessage;
+    }
     console.error('FitFlow API Request Error:', error.response?.data || error.message);
     return Promise.reject(error);
   }

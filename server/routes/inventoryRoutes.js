@@ -52,7 +52,11 @@ router.get('/', async (req, res) => {
     // Additional filters on joined product
     const matchConditions = {};
     if (size) {
-      matchConditions['productInfo.size'] = size;
+      if (size === 'XXXL' || size === '3XL') {
+        matchConditions['productInfo.size'] = { $in: ['3XL', 'XXXL'] };
+      } else {
+        matchConditions['productInfo.size'] = size;
+      }
     }
     if (category) {
       matchConditions['productInfo.category'] = category;
